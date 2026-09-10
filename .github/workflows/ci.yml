@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Each gate runs even if an earlier one failed, so a single push reports
+      # every problem at once instead of one per round trip.
+      - name: Lint
+        if: '!cancelled()'
+        run: npm run lint
+
+      - name: Typecheck
+        if: '!cancelled()'
+        run: npm run typecheck
+
+      - name: Test
+        if: '!cancelled()'
+        # No API key: the suite runs against the fake provider by design, which
+        # is what makes the failure paths reproducible in CI.
+        run: npm run test:coverage
+
+      - name: Build
+        if: '!cancelled()'
+        run: npm run build
+
+  app:
+    name: Flutter app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Install
+        # Also regenerates lib/l10n/app_localizations.dart from the ARB files,
+        # which is why that file is not committed.
+        run: flutter pub get
+
+      - name: Analyze
+        if: '!cancelled()'
+        run: flutter analyze
+
+      - name: Format check
+        if: '!cancelled()'
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Test
+        if: '!cancelled()'
+        run: flutter test
+
+      # Proves the app still compiles for the target it is demoed on, which
+      # `analyze` alone does not guarantee.
+      - name: Build web
+        if: '!cancelled()'
+        run: flutter build web --dart-define=API_BASE_URL=http://localhost:8080

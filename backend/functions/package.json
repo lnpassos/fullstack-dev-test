@@ -1,0 +1,21 @@
+{
+  "name": "gift-message-suggester-functions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloud Functions deploy adapter for the suggestion API",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": { "node": "20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "serve": "npm run build && firebase emulators:start --only functions"
+  },
+  "dependencies": {
+    "firebase-functions": "^7.3.2",
+    "gift-message-suggester-backend": "file:.."
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "functions": [
+    {
+      "source": "backend/functions",
+      "codebase": "api",
+      "runtime": "nodejs20",
+      "predeploy": [
+        "npm --prefix backend run build",
+        "npm --prefix backend/functions run build"
+      ],
+      "ignore": ["node_modules", ".git", "**/*.local"]
+    }
+  ],
+  "emulators": {
+    "functions": { "port": 5001 },
+    "ui": { "enabled": true }
+  }
+}
