@@ -1,0 +1,10 @@
+# One line ending in the repository, whatever the contributor's OS does locally.
+# Without this, a Windows checkout can rewrite every line of every file and turn
+# a one-line change into an unreviewable diff.
+* text=auto eol=lf
+
+# Binary, so Git must not touch them.
+*.png binary
+*.jpg binary
+*.jar binary
+*.keystore binary

@@ -1,0 +1,389 @@
+openapi: 3.1.0
+
+info:
+  title: Gift Card Message Suggester API
+  version: 1.0.0
+  description: |
+    Generates short, printable gift card messages for a given occasion and
+    relationship.
+
+    ## Degraded responses
+
+    When the LLM cannot serve a request — timeout, rate limit, upstream error,
+    content filter, or an open circuit breaker — the API still answers `200`,
+    with curated fallback messages and `meta.degraded: true`. Clients should
+    branch on `meta.source`, not on the status code, to decide whether to show a
+    "generic suggestions" notice.
+
+    A `4xx` or `5xx` therefore always means the request itself failed, never that
+    the model did.
+
+    ## Errors
+
+    Every error uses one envelope. Switch on `error.code`, which is stable;
+    `error.message` is human-facing copy and may change.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Suggestions
+  - name: Operations
+
+paths:
+  /api/v1/suggestions:
+    post:
+      tags: [Suggestions]
+      summary: Generate gift card message suggestions
+      operationId: createSuggestions
+      description: |
+        POST rather than GET even though the call is read-only: the inputs are
+        user-authored free text, and a query string would put them into access
+        logs, proxy logs and browser history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuggestionRequest'
+            examples:
+              minimal:
+                summary: Only the required fields
+                value:
+                  occasion: Birthday
+                  relationship: Friend
+              full:
+                summary: Every field
+                value:
+                  occasion: Wedding
+                  relationship: Colleague
+                  tone: formal
+                  count: 2
+      responses:
+        '200':
+          description: |
+            Suggestions produced. Check `meta.source` to tell a model-generated
+            response from a degraded one.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestionResponse'
+              examples:
+                generated:
+                  summary: Served by the model
+                  value:
+                    suggestions:
+                      - id: s_1
+                        text: Wishing you the happiest of birthdays.
+                      - id: s_2
+                        text: Hope your day is every bit as good as you are.
+                      - id: s_3
+                        text: Here is to a year worth celebrating.
+                    meta:
+                      source: llm
+                      degraded: false
+                      model: gemini-flash-latest
+                      requestId: 4f1c8a2e-6b3d-4a91-9f0e-2c7d8b5a1e34
+                      latencyMs: 842
+                degraded:
+                  summary: The LLM was unavailable; curated messages served instead
+                  value:
+                    suggestions:
+                      - id: s_1
+                        text: Wishing you a wonderful birthday and a year full of good things.
+                      - id: s_2
+                        text: Happy birthday! Hope today is as lovely as you are.
+                    meta:
+                      source: fallback
+                      degraded: true
+                      model: null
+                      requestId: 9a2b1c7d-4e8f-4c3a-b5d6-1e2f3a4b5c6d
+                      latencyMs: 12
+        '400':
+          description: |
+            The request was rejected. Invalid input never reaches the model and
+            never degrades to the fallback — bad input is a client bug worth
+            surfacing, not something to paper over with generic messages.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: VALIDATION_ERROR
+                  message: The request could not be processed.
+                  requestId: 4f1c8a2e-6b3d-4a91-9f0e-2c7d8b5a1e34
+                  details:
+                    - field: occasion
+                      rule: too_short
+                      message: occasion must be at least 2 characters.
+        '413':
+          description: Body larger than 8 KB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Per-IP rate limit exceeded.
+          headers:
+            RateLimit:
+              description: IETF draft-8 rate limit state.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: RATE_LIMITED
+                  message: 'Too many requests. Please wait a moment and try again (limit: 20 per 60s).'
+                  requestId: 4f1c8a2e-6b3d-4a91-9f0e-2c7d8b5a1e34
+        '500':
+          description: |
+            Unexpected server error. The body is deliberately generic; use
+            `requestId` to find the full error in the server logs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/options:
+    get:
+      tags: [Suggestions]
+      summary: Vocabulary offered by the UI
+      operationId: getOptions
+      description: |
+        Suggested values for the app's dropdowns, served by the API so that
+        adding an occasion does not require shipping a new build. These are
+        suggestions, not an allowlist — the endpoint above accepts any free text
+        that passes validation.
+
+        Every value offered here is one the curated fallback catalogue also
+        resolves, so choosing from the dropdown still produces an occasion-
+        specific card when the model is unavailable.
+      responses:
+        '200':
+          description: Suggested values.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [occasions, relationships, tones]
+                properties:
+                  occasions:
+                    type: array
+                    items: { type: string }
+                  relationships:
+                    type: array
+                    items: { type: string }
+                  tones:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tone'
+
+  /health:
+    get:
+      tags: [Operations]
+      summary: Liveness
+      operationId: getHealth
+      description: Is the process alive? Not rate limited.
+      responses:
+        '200':
+          description: The process is running.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, version, uptimeSeconds]
+                properties:
+                  status: { type: string, const: ok }
+                  version: { type: string }
+                  uptimeSeconds: { type: integer }
+
+  /ready:
+    get:
+      tags: [Operations]
+      summary: Readiness
+      operationId: getReady
+      description: |
+        Should traffic come here? Answers `200` even while the circuit breaker is
+        open: a degraded instance still serves every request correctly, and
+        removing it from the pool would only concentrate the provider outage onto
+        fewer instances. The breaker state is reported so monitoring can alert on
+        the degradation without the load balancer acting on it.
+      responses:
+        '200':
+          description: Accepting traffic; `status` reports whether it is degraded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, provider]
+                properties:
+                  status:
+                    type: string
+                    enum: [ready, degraded]
+                  provider:
+                    type: object
+                    required: [circuit]
+                    properties:
+                      circuit:
+                        type: string
+                        enum: [closed, open, half-open]
+
+components:
+  headers:
+    XRequestId:
+      description: |
+        Correlation id for this request, echoed from an inbound `X-Request-Id`
+        when one is supplied. Include it in any bug report.
+      schema:
+        type: string
+
+  schemas:
+    ValidationDetail:
+      type: object
+      required: [field, rule, message]
+      description: |
+        One rejected field.
+
+        Branch on `rule`, which is stable and machine-readable. `message` is
+        written for a developer reading a log and may change wording at any
+        time; a client that renders it has tied its own copy to ours. Word your
+        message from `rule` and `field` instead.
+      properties:
+        field:
+          type: string
+          examples: [occasion, relationship]
+        rule:
+          type: string
+          enum: [required, too_short, too_long, invalid_format, invalid_value, unknown_field]
+        message:
+          type: string
+
+    Tone:
+      type: string
+      enum: [warm, funny, formal, heartfelt]
+      default: warm
+
+    SuggestionRequest:
+      type: object
+      additionalProperties: false
+      required: [occasion, relationship]
+      description: |
+        Unknown properties are rejected rather than ignored: an unrecognised
+        field is either a client bug worth surfacing early or an attempt to
+        smuggle something past validation.
+      properties:
+        occasion:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: |
+            Free text, e.g. `Birthday`. Normalised (NFKC, invisible characters
+            stripped, whitespace collapsed) then checked against a character
+            allowlist before it goes anywhere near a prompt.
+          examples: [Birthday, Wedding, Thank you]
+        relationship:
+          type: string
+          minLength: 2
+          maxLength: 50
+          description: Free text, e.g. `Friend`. Validated identically to `occasion`.
+          examples: [Friend, Colleague, Mother]
+        tone:
+          $ref: '#/components/schemas/Tone'
+        count:
+          type: integer
+          minimum: 2
+          maximum: 3
+          default: 3
+
+    Suggestion:
+      type: object
+      required: [id, text]
+      properties:
+        id:
+          type: string
+          description: Stable within one response; usable as a list key.
+          examples: [s_1]
+        text:
+          type: string
+          maxLength: 180
+          description: |
+            Plain text, ready to print. Guaranteed free of markdown, URLs and
+            line breaks — every message is re-validated after generation.
+
+    SuggestionMeta:
+      type: object
+      required: [source, degraded, model, requestId, latencyMs]
+      properties:
+        source:
+          type: string
+          enum: [llm, cache, fallback]
+          description: |
+            `llm` — generated for this request.
+            `cache` — a previous generation for an equivalent query.
+            `fallback` — curated messages; the model could not be reached.
+        degraded:
+          type: boolean
+          description: |
+            True whenever the LLM could not serve this request. Clients should
+            show a notice rather than treat the response as an error.
+        model:
+          type: [string, 'null']
+          description: Null on the fallback path — no model produced those messages.
+        requestId:
+          type: string
+        latencyMs:
+          type: integer
+
+    SuggestionResponse:
+      type: object
+      required: [suggestions, meta]
+      properties:
+        suggestions:
+          type: array
+          minItems: 2
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/Suggestion'
+        meta:
+          $ref: '#/components/schemas/SuggestionMeta'
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              enum:
+                - VALIDATION_ERROR
+                - RATE_LIMITED
+                - UPSTREAM_UNAVAILABLE
+                - PAYLOAD_TOO_LARGE
+                - NOT_FOUND
+                - INTERNAL_ERROR
+              description: Stable. Branch on this, never on `message`.
+            message:
+              type: string
+              description: |
+                Human-facing copy. Never contains a stack trace, an upstream
+                error string, or any internal identifier.
+            requestId:
+              type: string
+            details:
+              type: array
+              description: |
+                Present only for validation failures. Describes our own rules,
+                never internal state.
+              items:
+                $ref: '#/components/schemas/ValidationDetail'
