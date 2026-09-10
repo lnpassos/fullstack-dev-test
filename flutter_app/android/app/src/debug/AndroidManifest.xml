@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Debug-only additions, merged on top of src/main/AndroidManifest.xml.
+
+      `INTERNET` is what the Flutter tooling needs to talk to the running app;
+      the network security config is what lets a debug build reach a plaintext
+      backend on the development machine. Both are absent from release builds.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>

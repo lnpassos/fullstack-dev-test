@@ -1,0 +1,33 @@
+# --- Secrets ------------------------------------------------------------
+# Never commit a real key. `.env.example` is the documented template.
+.env
+.env.*
+!.env.example
+
+# --- Node ---------------------------------------------------------------
+node_modules/
+# The root package.json carries scripts only, no dependencies.
+/package-lock.json
+dist/
+coverage/
+*.log
+npm-debug.log*
+
+# --- Flutter / Dart -----------------------------------------------------
+# Generated from lib/l10n/*.arb by `flutter pub get`. A build artefact, not
+# source: committing it invites the two drifting apart.
+flutter_app/lib/l10n/app_localizations*.dart
+
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+.pub-cache/
+.pub/
+*.iml
+
+# --- Editors / OS -------------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
