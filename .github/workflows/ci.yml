@@ -50,6 +50,14 @@ jobs:
         if: '!cancelled()'
         run: npm run build
 
+      # A separate npm package, so it needs its own install and its own check.
+      # Without this the Cloud Functions adapter could stop compiling and nothing
+      # would say so until someone tried to deploy.
+      - name: Typecheck the Cloud Functions adapter
+        if: '!cancelled()'
+        working-directory: backend/functions
+        run: npm install && npm run typecheck
+
   app:
     name: Flutter app
     runs-on: ubuntu-latest

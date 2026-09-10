@@ -12,7 +12,18 @@ import tseslint from 'typescript-eslint';
  * which is why `projectService` is on.
  */
 export default tseslint.config(
-  { ignores: ['dist/**', 'coverage/**', 'node_modules/**'] },
+  {
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      'node_modules/**',
+      // A separate npm package with its own dependencies and its own typecheck.
+      // Linting it from here needs `firebase-functions` resolvable, which it is
+      // not unless someone has installed that package — so a clean clone would
+      // fail this gate for a reason that has nothing to do with the code.
+      'functions/**',
+    ],
+  },
 
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
